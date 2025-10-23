@@ -1,4 +1,29 @@
 {
   "name": "ItsYouApp",
-  "displayName": "ItsYouApp"
+  "displayName": "ItsYouApp",
+  "expo": {
+    "name": "ItsYouApp",
+    "slug": "itsyouapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/applogo.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./src/assets/applogo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A1A2E"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.itsyouapp",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/applogo.png",
+        "backgroundColor": "#1A1A2E"
+      },
+      "package": "com.itsyouapp"
+    }
+  }
 }

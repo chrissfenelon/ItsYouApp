@@ -116,4 +116,13 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // ExoPlayer for music playback
+    implementation 'com.google.android.exoplayer:exoplayer:2.19.1'
+
+    // AndroidX Media for MediaSession
+    implementation 'androidx.media:media:1.7.0'
+
+    // AndroidX Core
+    implementation 'androidx.core:core-ktx:1.12.0'
 }

@@ -73,3 +73,50 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Documentation temporaire
+*_GUIDE.md
+*_SETUP.md
+*_FIXES*.md
+*_SUMMARY.md
+*_PLAN.md
+*_REPORT.md
+*_TODO.md
+*_IMPLEMENTATION.md
+*_ANALYSIS.md
+*_IMPROVEMENTS.md
+*_TROUBLESHOOTING.md
+
+# Scripts et logs temporaires
+*.txt
+!package*.json
+!tsconfig.json
+*.log
+*.csv
+rename-*.ps1
+rename-*.js
+patch-*.ps1
+*.patch
+temp_files.txt
+nul
+build_errors.txt
+crash_log*.txt
+hs_err_*.log
+replay_*.log
+music-filename-mapping.json
+
+# Firebase local
+.firebase/
+.firebaserc
+
+# Claude
+.claude/
+
+# Admin panel
+admin-panel/node_modules/
+admin-panel/.next/
+admin-panel/out/
+admin-panel/.firebase/
+admin-panel/.env.local
+admin-panel/create-*.js
+admin-panel/create-*.ps1

@@ -1,0 +1,245 @@
+import { WordTheme } from '../../types/wordSearch.types';
+import { animalWords } from './animals';
+import { foodWords } from './food';
+import { sportsWords } from './sports';
+import { natureWords } from './nature';
+import { technologyWords } from './technology';
+import { musicWords } from './music';
+import { professionsWords } from './professions';
+import { colorsWords } from './colors';
+import { travelWords } from './travel';
+import weatherWords from './weather';
+import scienceWords from './science';
+import spaceWords from './space';
+import { history, geography, art, literature, philosophy, medicine, architecture, mixed } from './advanced';
+
+export const WORD_THEMES: WordTheme[] = [
+  {
+    id: 'animals',
+    name: 'Animaux',
+    icon: '🦁',
+    words: animalWords,
+    unlocked: true,
+    color: '#FF6B9D',
+    description: 'Trouve les animaux du monde entier',
+  },
+  {
+    id: 'food',
+    name: 'Nourriture',
+    icon: '🍕',
+    words: foodWords,
+    unlocked: true,
+    color: '#FFD54F',
+    description: 'Aliments et boissons délicieux',
+  },
+  {
+    id: 'sports',
+    name: 'Sports',
+    icon: '⚽',
+    words: sportsWords,
+    unlocked: true,
+    color: '#4DD0E1',
+    description: 'Sports et activités populaires',
+  },
+  {
+    id: 'nature',
+    name: 'Nature',
+    icon: '🌳',
+    words: natureWords,
+    unlocked: false,
+    price: 100,
+    color: '#4CAF50',
+    description: 'Éléments du monde naturel',
+  },
+  {
+    id: 'technology',
+    name: 'Technologie',
+    icon: '💻',
+    words: technologyWords,
+    unlocked: false,
+    price: 100,
+    color: '#2196F3',
+    description: 'Monde de la technologie et informatique',
+  },
+  {
+    id: 'music',
+    name: 'Musique',
+    icon: '🎵',
+    words: musicWords,
+    unlocked: false,
+    price: 100,
+    color: '#9C27B0',
+    description: 'Instruments et styles musicaux',
+  },
+  {
+    id: 'professions',
+    name: 'Métiers',
+    icon: '👔',
+    words: professionsWords,
+    unlocked: false,
+    price: 150,
+    color: '#795548',
+    description: 'Professions et carrières',
+  },
+  {
+    id: 'colors',
+    name: 'Couleurs',
+    icon: '🎨',
+    words: colorsWords,
+    unlocked: false,
+    price: 100,
+    color: '#FF5722',
+    description: 'Toutes les couleurs de l\'arc-en-ciel',
+  },
+  {
+    id: 'travel',
+    name: 'Voyage',
+    icon: '✈️',
+    words: travelWords,
+    unlocked: false,
+    price: 150,
+    color: '#00BCD4',
+    description: 'Destinations et moyens de transport',
+  },
+  {
+    id: 'weather',
+    name: 'Météo',
+    icon: '🌦️',
+    words: weatherWords,
+    unlocked: false,
+    price: 200,
+    color: '#03A9F4',
+    description: 'Phénomènes météorologiques',
+  },
+  {
+    id: 'science',
+    name: 'Science',
+    icon: '🔬',
+    words: scienceWords,
+    unlocked: false,
+    price: 250,
+    color: '#673AB7',
+    description: 'Monde de la science et découvertes',
+  },
+  {
+    id: 'space',
+    name: 'Espace',
+    icon: '🚀',
+    words: spaceWords,
+    unlocked: false,
+    price: 250,
+    color: '#3F51B5',
+    description: 'Cosmos et astronomie',
+  },
+  {
+    id: 'history',
+    name: 'Histoire',
+    icon: '📜',
+    words: history,
+    unlocked: false,
+    price: 300,
+    color: '#8D6E63',
+    description: 'Grandes périodes historiques',
+  },
+  {
+    id: 'geography',
+    name: 'Géographie',
+    icon: '🗺️',
+    words: geography,
+    unlocked: false,
+    price: 300,
+    color: '#009688',
+    description: 'Terres et mers du monde',
+  },
+  {
+    id: 'art',
+    name: 'Art',
+    icon: '🎭',
+    words: art,
+    unlocked: false,
+    price: 350,
+    color: '#E91E63',
+    description: 'Monde de l\'art et créativité',
+  },
+  {
+    id: 'literature',
+    name: 'Littérature',
+    icon: '📚',
+    words: literature,
+    unlocked: false,
+    price: 400,
+    color: '#5D4037',
+    description: 'Livres et écriture',
+  },
+  {
+    id: 'philosophy',
+    name: 'Philosophie',
+    icon: '🤔',
+    words: philosophy,
+    unlocked: false,
+    price: 450,
+    color: '#607D8B',
+    description: 'Pensées et sagesse',
+  },
+  {
+    id: 'medicine',
+    name: 'Médecine',
+    icon: '⚕️',
+    words: medicine,
+    unlocked: false,
+    price: 500,
+    color: '#F44336',
+    description: 'Santé et soins médicaux',
+  },
+  {
+    id: 'architecture',
+    name: 'Architecture',
+    icon: '🏛️',
+    words: architecture,
+    unlocked: false,
+    price: 550,
+    color: '#9E9E9E',
+    description: 'Bâtiments et constructions',
+  },
+  {
+    id: 'mixed',
+    name: 'Défi Ultime',
+    icon: '🏆',
+    words: mixed,
+    unlocked: false,
+    price: 1000,
+    color: '#FFD700',
+    description: 'Le défi suprême !',
+  },
+];
+
+export const getThemeById = (id: string): WordTheme | undefined => {
+  return WORD_THEMES.find(theme => theme.id === id);
+};
+
+export const getUnlockedThemes = (): WordTheme[] => {
+  return WORD_THEMES.filter(theme => theme.unlocked);
+};
+
+export {
+  animalWords,
+  foodWords,
+  sportsWords,
+  natureWords,
+  technologyWords,
+  musicWords,
+  professionsWords,
+  colorsWords,
+  travelWords,
+  weatherWords,
+  scienceWords,
+  spaceWords,
+  history,
+  geography,
+  art,
+  literature,
+  philosophy,
+  medicine,
+  architecture,
+  mixed,
+};

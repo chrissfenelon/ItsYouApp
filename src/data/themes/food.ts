@@ -1,0 +1,10 @@
+export const foodWords = [
+  'PIZZA', 'BURGER', 'PATES', 'SALADE', 'SOUPE',
+  'PAIN', 'FROMAGE', 'LAIT', 'BEURRE', 'YAOURT',
+  'POMME', 'BANANE', 'ORANGE', 'RAISIN', 'MELON',
+  'FRAISE', 'CERISE', 'CITRON', 'MANGUE', 'PECHE',
+  'CAROTTE', 'TOMATE', 'PATATE', 'OIGNON', 'POIVRE',
+  'POULET', 'BOEUF', 'POISSON', 'RIZ', 'HARICOTS',
+  'CHOCOLAT', 'BISCUIT', 'GATEAU', 'BONBON', 'GLACE',
+  'CAFE', 'THE', 'JUS', 'EAU', 'SODA',
+];
