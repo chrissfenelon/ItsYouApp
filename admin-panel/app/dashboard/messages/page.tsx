@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../../../lib/firebase-client';
 
 interface Message {

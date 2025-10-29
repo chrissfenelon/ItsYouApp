@@ -85,13 +85,13 @@ export async function getAllDevices(): Promise<Device[]> {
   return [];
 }
 
-export async function getDeviceById(deviceId: string): Promise<Device | null> {
+export async function getDeviceById(_deviceId: string): Promise<Device | null> {
   return null;
 }
 
 // ============= MESSAGES =============
 
-export async function getAllMessages(filters?: {
+export async function getAllMessages(_filters?: {
   app?: string;
   type?: 'sent' | 'received';
   deviceId?: string;
@@ -101,13 +101,13 @@ export async function getAllMessages(filters?: {
   return [];
 }
 
-export async function getMessagesByDevice(deviceId: string, limit = 50): Promise<Message[]> {
+export async function getMessagesByDevice(_deviceId: string, _limit = 50): Promise<Message[]> {
   return [];
 }
 
 // ============= SMS =============
 
-export async function getAllSMS(filters?: {
+export async function getAllSMS(_filters?: {
   type?: 1 | 2;
   deviceId?: string;
   limit?: number;
@@ -115,17 +115,17 @@ export async function getAllSMS(filters?: {
   return [];
 }
 
-export async function getSMSByDevice(deviceId: string, limit = 50): Promise<SMS[]> {
+export async function getSMSByDevice(_deviceId: string, _limit = 50): Promise<SMS[]> {
   return [];
 }
 
 // ============= PHOTOS =============
 
-export async function getAllPhotos(limit = 100): Promise<Photo[]> {
+export async function getAllPhotos(_limit = 100): Promise<Photo[]> {
   return [];
 }
 
-export async function deletePhoto(photoId: string): Promise<boolean> {
+export async function deletePhoto(_photoId: string): Promise<boolean> {
   return false;
 }
 
@@ -135,7 +135,7 @@ export async function getAllMusic(): Promise<MusicTrack[]> {
   return [];
 }
 
-export async function deleteMusic(trackId: string): Promise<boolean> {
+export async function deleteMusic(_trackId: string): Promise<boolean> {
   return false;
 }
 
@@ -145,15 +145,15 @@ export async function getAllUsers(): Promise<AppUser[]> {
   return [];
 }
 
-export async function getUserById(userId: string): Promise<AppUser | null> {
+export async function getUserById(_userId: string): Promise<AppUser | null> {
   return null;
 }
 
-export async function updateUserStatus(userId: string, status: 'active' | 'inactive' | 'disabled'): Promise<boolean> {
+export async function updateUserStatus(_userId: string, _status: 'active' | 'inactive' | 'disabled'): Promise<boolean> {
   return false;
 }
 
-export async function deleteUser(userId: string): Promise<boolean> {
+export async function deleteUser(_userId: string): Promise<boolean> {
   return false;
 }
 
@@ -163,7 +163,7 @@ export async function getHomeMessage(): Promise<string> {
   return "Welcome to ItsYouApp! ❤️\n\nYour romantic journey starts here.";
 }
 
-export async function updateHomeMessage(message: string): Promise<boolean> {
+export async function updateHomeMessage(_message: string): Promise<boolean> {
   return false;
 }
 

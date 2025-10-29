@@ -19,7 +19,7 @@ export interface PaginatedResult<T> {
 }
 
 // Helper to convert Firestore timestamp to Date
-function timestampToDate(timestamp: any): Date {
+function _timestampToDate(timestamp: any): Date {
   if (timestamp?.toDate) {
     return timestamp.toDate();
   }
