@@ -1,52 +1,49 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getAllMusic, deleteMusic } from '@/lib/db';
+import { NextRequest } from 'next/server';
+import { requireAuth } from '@/lib/auth';
+import { getMusicPaginated } from '@/lib/db-pagination';
+import { deleteMusic } from '@/lib/db';
+import { successResponse, errorResponse, handleApiError } from '@/lib/api-response';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const tracks = await getAllMusic();
+    await requireAuth();
 
-    return NextResponse.json({
-      success: true,
-      tracks,
+    const searchParams = request.nextUrl.searchParams;
+    const category = searchParams.get('category') || undefined;
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const limit = parseInt(searchParams.get('limit') || '50', 10);
+
+    const result = await getMusicPaginated({
+      category,
+      page,
+      limit,
     });
-  } catch (error: any) {
-    console.error('Error getting music:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+
+    return successResponse(result.data, 200, result.pagination);
+  } catch (error) {
+    return handleApiError(error);
   }
 }
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { trackId } = await request.json();
+    await requireAuth();
+
+    const searchParams = request.nextUrl.searchParams;
+    const trackId = searchParams.get('id');
 
     if (!trackId) {
-      return NextResponse.json(
-        { error: 'Track ID is required' },
-        { status: 400 }
-      );
+      return errorResponse('Track ID is required', 400);
     }
 
     const success = await deleteMusic(trackId);
 
-    if (success) {
-      return NextResponse.json({
-        success: true,
-        message: 'Track deleted successfully',
-      });
-    } else {
-      return NextResponse.json(
-        { error: 'Failed to delete track' },
-        { status: 500 }
-      );
+    if (!success) {
+      return errorResponse('Failed to delete music track', 500);
     }
-  } catch (error: any) {
-    console.error('Error deleting music:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+
+    return successResponse({ message: 'Music track deleted successfully' });
+  } catch (error) {
+    return handleApiError(error);
   }
 }

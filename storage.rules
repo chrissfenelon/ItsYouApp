@@ -1,0 +1,115 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if user owns the file
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check file size (max 100MB)
+    function isValidSize() {
+      return request.resource.size < 100 * 1024 * 1024;
+    }
+
+    // Helper function to check if file is an image or video
+    function isMediaFile() {
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType.matches('video/.*');
+    }
+
+    // Helper function to check if file is audio
+    function isAudioFile() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+
+    // Helper function to check for any allowed file type
+    function isAllowedFile() {
+      return request.resource.contentType.matches('image/.*') ||
+             request.resource.contentType.matches('video/.*') ||
+             request.resource.contentType.matches('audio/.*') ||
+             request.resource.contentType.matches('application/pdf');
+    }
+
+    // User shared media
+    match /users/{userId}/shared_media/{mediaId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isMediaFile() && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+
+    // User profile pictures
+    match /users/{userId}/profile/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isMediaFile() && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+
+    // User photos/gallery
+    match /users/{userId}/photos/{photoId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isMediaFile() && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+
+    // User music/audio files
+    match /users/{userId}/music/{songId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) && isAudioFile() && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+
+    // Shared photos (couple photos)
+    match /shared/{coupleId}/photos/{photoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isMediaFile() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+
+    // Shared music (couple music)
+    match /shared/{coupleId}/music/{songId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAudioFile() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+
+    // Public photos (from admin panel or app)
+    match /photos/{photoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isMediaFile() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+
+    // Public music (from admin panel)
+    match /music/{musicId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isAudioFile() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+
+    // Admin uploaded content
+    match /admin/{path=**} {
+      allow read: if isAuthenticated();
+      allow write, delete: if isAuthenticated();
+    }
+
+    // Temporary uploads
+    match /temp/{userId}/{fileName} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId) && isAllowedFile() && isValidSize();
+      allow delete: if isOwner(userId);
+    }
+
+    // Default: deny all other access
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

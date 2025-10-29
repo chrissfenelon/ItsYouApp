@@ -1,151 +1,211 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-
-interface MusicTrack {
-  id: string;
-  title: string;
-  artist: string;
-  duration?: string;
-  size: number;
-  category: string;
-  url: string;
-  filename: string;
-  uploadedAt: Date;
-}
+import { useState, useRef } from 'react';
+import { useFirebaseAuth } from '../../../hooks/useFirebaseAuth';
+import { useMusicPaginated, type MusicTrack } from '../../../hooks/useMusicPaginated';
+import LoadingProgress from '../../../components/LoadingProgress';
+import { db, storage, collection, addDoc, deleteDoc, updateDoc, doc, Timestamp, ref, uploadBytes, getDownloadURL, deleteObject } from '../../../lib/firebase-client';
 
 export default function MusicPage() {
-  const [musicTracks, setMusicTracks] = useState<MusicTrack[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const { isAuthenticated } = useFirebaseAuth();
+
+  // Use paginated hook for performance
+  const {
+    tracks: musicTracks,
+    loading,
+    hasMore,
+    loadMore,
+    refresh,
+    totalCount,
+    loadedCount
+  } = useMusicPaginated(isAuthenticated, 50);
+
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [showUploadModal, setShowUploadModal] = useState(false);
   const [editingTrack, setEditingTrack] = useState<MusicTrack | null>(null);
   const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  // Upload form state
-  const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadArtist, setUploadArtist] = useState('');
-  const [uploadCategory, setUploadCategory] = useState('Romantic');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  useEffect(() => {
-    fetchMusicTracks();
-  }, []);
-
-  async function fetchMusicTracks() {
-    try {
-      setLoading(true);
-      const response = await fetch('/api/music');
-      const data = await response.json();
-
-      if (data.success) {
-        setMusicTracks(data.tracks);
-      }
-    } catch (error) {
-      console.error('Error fetching music:', error);
-    } finally {
-      setLoading(false);
-    }
+  // Multiple uploads state
+  interface UploadTask {
+    id: string;
+    file: File;
+    title: string;
+    artist: string;
+    category: string;
+    progress: number;
+    status: 'pending' | 'uploading' | 'success' | 'error';
+    error?: string;
   }
+  const [uploadTasks, setUploadTasks] = useState<UploadTask[]>([]);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/m4a'];
+    const validFiles: File[] = [];
+
+    // Validate all selected files
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
       // Validate file type
-      const allowedTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/m4a'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Invalid file type. Only MP3, WAV, OGG, and M4A files are allowed.');
-        return;
+        alert(`Invalid file type for ${file.name}. Only MP3, WAV, OGG, and M4A files are allowed.`);
+        continue;
       }
 
       // Validate file size (max 50MB)
       if (file.size > 50 * 1024 * 1024) {
-        alert('File size exceeds 50MB limit.');
-        return;
+        alert(`File size exceeds 50MB limit for ${file.name}.`);
+        continue;
       }
 
-      setSelectedFile(file);
+      validFiles.push(file);
+    }
+
+    if (validFiles.length > 0) {
+      // Create upload tasks for each file
+      const newTasks: UploadTask[] = validFiles.map(file => ({
+        id: `${Date.now()}-${Math.random()}`,
+        file,
+        title: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
+        artist: 'Unknown Artist',
+        category: 'Romantic',
+        progress: 0,
+        status: 'pending' as const,
+      }));
+
+      setUploadTasks(prev => [...prev, ...newTasks]);
       setShowUploadModal(true);
     }
-  }
 
-  async function handleUpload() {
-    if (!selectedFile || !uploadTitle || !uploadArtist || !uploadCategory) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    try {
-      setUploading(true);
-      setUploadProgress(0);
-
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('title', uploadTitle);
-      formData.append('artist', uploadArtist);
-      formData.append('category', uploadCategory);
-
-      const response = await fetch('/api/music/upload', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        alert('Music uploaded successfully!');
-        setShowUploadModal(false);
-        resetUploadForm();
-        fetchMusicTracks();
-      } else {
-        alert('Failed to upload music: ' + data.error);
-      }
-    } catch (error) {
-      console.error('Error uploading music:', error);
-      alert('Error uploading music');
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  }
-
-  function resetUploadForm() {
-    setUploadTitle('');
-    setUploadArtist('');
-    setUploadCategory('Romantic');
-    setSelectedFile(null);
+    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   }
 
+  async function uploadSingleTask(task: UploadTask) {
+    try {
+      // Update status to uploading
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, status: 'uploading' as const, progress: 10 } : t
+      ));
+
+      // Upload file to Firebase Storage
+      const filename = `${Date.now()}_${task.file.name}`;
+      const storageRef = ref(storage, `music/${filename}`);
+
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, progress: 30 } : t
+      ));
+
+      const snapshot = await uploadBytes(storageRef, task.file);
+
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, progress: 60 } : t
+      ));
+
+      const downloadURL = await getDownloadURL(snapshot.ref);
+
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, progress: 80 } : t
+      ));
+
+      // Add music document to Firestore
+      await addDoc(collection(db, 'musicLibrary'), {
+        title: task.title,
+        artist: task.artist,
+        category: task.category,
+        url: downloadURL,
+        filename: task.file.name,
+        size: task.file.size,
+        uploadedAt: Timestamp.now(),
+        uploadedBy: 'admin'
+      });
+
+      // Mark as success
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, status: 'success' as const, progress: 100 } : t
+      ));
+
+      console.log(`✅ Uploaded: ${task.title}`);
+    } catch (error) {
+      console.error(`❌ Error uploading ${task.title}:`, error);
+      setUploadTasks(prev => prev.map(t =>
+        t.id === task.id ? {
+          ...t,
+          status: 'error' as const,
+          error: (error as Error).message
+        } : t
+      ));
+    }
+  }
+
+  async function handleUploadAll() {
+    const pendingTasks = uploadTasks.filter(t => t.status === 'pending');
+
+    if (pendingTasks.length === 0) {
+      alert('No pending uploads');
+      return;
+    }
+
+    // Upload all tasks in parallel
+    await Promise.all(pendingTasks.map(task => uploadSingleTask(task)));
+
+    // Refresh music list
+    refresh();
+  }
+
+  function removeTask(taskId: string) {
+    setUploadTasks(prev => prev.filter(t => t.id !== taskId));
+  }
+
+  function updateTaskField(taskId: string, field: keyof UploadTask, value: any) {
+    setUploadTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, [field]: value } : t
+    ));
+  }
+
+  function clearCompletedTasks() {
+    setUploadTasks(prev => prev.filter(t => t.status === 'pending' || t.status === 'uploading'));
+    if (uploadTasks.every(t => t.status === 'success' || t.status === 'error')) {
+      setShowUploadModal(false);
+    }
+  }
+
   async function handleDelete(trackId: string) {
-    if (!confirm('Are you sure you want to delete this track?')) {
+    if (!confirm('Are you sure you want to delete this track? This will permanently delete the file from storage.')) {
       return;
     }
 
     try {
-      const response = await fetch('/api/music', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trackId }),
-      });
+      // Find the track to get the storage URL
+      const track = musicTracks.find(t => t.id === trackId);
 
-      const data = await response.json();
-
-      if (data.success) {
-        alert('Track deleted successfully!');
-        fetchMusicTracks();
-      } else {
-        alert('Failed to delete track');
+      if (track && track.url) {
+        try {
+          // Delete from Storage first
+          const storageRef = ref(storage, track.url);
+          await deleteObject(storageRef);
+          console.log('✅ File deleted from Storage');
+        } catch (storageError: any) {
+          console.warn('⚠️ Could not delete file from Storage:', storageError.message);
+          // Continue anyway to delete Firestore metadata
+        }
       }
+
+      // Delete metadata from Firestore
+      await deleteDoc(doc(db, 'musicLibrary', trackId));
+
+      alert('Track deleted successfully!');
+      refresh();
     } catch (error) {
       console.error('Error deleting track:', error);
-      alert('Error deleting track');
+      alert('Error deleting track: ' + (error as Error).message);
     }
   }
 
@@ -153,29 +213,19 @@ export default function MusicPage() {
     if (!editingTrack) return;
 
     try {
-      const response = await fetch('/api/music/update', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          trackId: editingTrack.id,
-          title: editingTrack.title,
-          artist: editingTrack.artist,
-          category: editingTrack.category,
-        }),
+      await updateDoc(doc(db, 'musicLibrary', editingTrack.id), {
+        title: editingTrack.title,
+        artist: editingTrack.artist,
+        category: editingTrack.category,
+        updatedAt: Timestamp.now(),
       });
 
-      const data = await response.json();
-
-      if (data.success) {
-        alert('Track updated successfully!');
-        setEditingTrack(null);
-        fetchMusicTracks();
-      } else {
-        alert('Failed to update track');
-      }
+      alert('Track updated successfully!');
+      setEditingTrack(null);
+      refresh();
     } catch (error) {
       console.error('Error updating track:', error);
-      alert('Error updating track');
+      alert('Error updating track: ' + (error as Error).message);
     }
   }
 
@@ -202,7 +252,7 @@ export default function MusicPage() {
     ? musicTracks
     : musicTracks.filter(t => t.category.toLowerCase() === categoryFilter.toLowerCase());
 
-  const totalSize = musicTracks.reduce((sum, track) => sum + track.size, 0);
+  const totalSize = musicTracks.reduce((sum, track) => sum + (track.size || 0), 0);
   const categories = Array.from(new Set(musicTracks.map(t => t.category)));
 
   return (
@@ -212,6 +262,7 @@ export default function MusicPage() {
         ref={fileInputRef}
         type="file"
         accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/mp4,audio/m4a"
+        multiple
         onChange={handleFileSelect}
         className="hidden"
       />
@@ -330,11 +381,25 @@ export default function MusicPage() {
           </div>
         </div>
 
-        {loading ? (
-          <div className="text-center py-12">
-            <p className="text-gray-400">Loading music tracks...</p>
+        {/* Loading Progress */}
+        {loading && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-white font-semibold">Loading Music Tracks...</h4>
+              <span className="text-gray-400 text-sm">
+                {loadedCount} / {totalCount} tracks
+              </span>
+            </div>
+            <LoadingProgress
+              loaded={loadedCount}
+              total={totalCount}
+              itemName="tracks"
+              showPercentage={true}
+            />
           </div>
-        ) : filteredTracks.length === 0 ? (
+        )}
+
+        {!loading && filteredTracks.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-400">No music tracks found. Upload some to get started!</p>
           </div>
@@ -380,7 +445,7 @@ export default function MusicPage() {
 
                   {/* Size */}
                   <div className="w-24 text-center">
-                    <p className="text-gray-400 text-sm">{formatFileSize(track.size)}</p>
+                    <p className="text-gray-400 text-sm">{formatFileSize(track.size || 0)}</p>
                   </div>
 
                   {/* Upload Date */}
@@ -424,110 +489,157 @@ export default function MusicPage() {
           </div>
         )}
 
-        {/* Info */}
+        {/* Info and Load More */}
         {!loading && filteredTracks.length > 0 && (
           <div className="flex items-center justify-between mt-6 pt-6 border-t border-white/10">
             <p className="text-gray-400 text-sm">
-              Showing {filteredTracks.length} of {musicTracks.length} tracks
+              Showing {filteredTracks.length} of {totalCount} tracks (Loaded: {loadedCount})
             </p>
+            {hasMore && (
+              <button
+                onClick={loadMore}
+                className="glass-button px-4 py-2 rounded-lg text-white text-sm font-medium"
+              >
+                Load More
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* Upload Modal */}
-      {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="glass-card p-8 max-w-md w-full mx-4">
-            <h3 className="text-2xl font-bold text-white mb-6">Upload Music Track</h3>
+      {/* Upload Modal - Multiple Files */}
+      {showUploadModal && uploadTasks.length > 0 && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="glass-card p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-2xl font-bold text-white">
+                Upload Music Tracks ({uploadTasks.length})
+              </h3>
+              <button
+                onClick={() => setShowUploadModal(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Selected File
-                </label>
-                <p className="text-white text-sm glass-input p-3 rounded-lg">
-                  {selectedFile?.name}
-                </p>
-                <p className="text-gray-400 text-xs mt-1">
-                  {selectedFile && formatFileSize(selectedFile.size)}
-                </p>
-              </div>
+            {/* Upload Tasks List */}
+            <div className="space-y-4 mb-6">
+              {uploadTasks.map((task) => (
+                <div key={task.id} className="glass-input p-4 rounded-lg">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        {task.status === 'success' && (
+                          <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        {task.status === 'error' && (
+                          <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                        {task.status === 'uploading' && (
+                          <svg className="w-5 h-5 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        )}
+                        <span className="text-white font-medium">{task.file.name}</span>
+                        <span className="text-gray-400 text-sm">({formatFileSize(task.file.size)})</span>
+                      </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Track Title *
-                </label>
-                <input
-                  type="text"
-                  value={uploadTitle}
-                  onChange={(e) => setUploadTitle(e.target.value)}
-                  className="glass-input w-full px-4 py-3 rounded-lg text-white"
-                  placeholder="Enter track title"
-                />
-              </div>
+                      {task.error && (
+                        <p className="text-red-400 text-sm mb-2">{task.error}</p>
+                      )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Artist *
-                </label>
-                <input
-                  type="text"
-                  value={uploadArtist}
-                  onChange={(e) => setUploadArtist(e.target.value)}
-                  className="glass-input w-full px-4 py-3 rounded-lg text-white"
-                  placeholder="Enter artist name"
-                />
-              </div>
+                      {task.status === 'pending' && (
+                        <div className="grid grid-cols-3 gap-3">
+                          <input
+                            type="text"
+                            value={task.title}
+                            onChange={(e) => updateTaskField(task.id, 'title', e.target.value)}
+                            placeholder="Title"
+                            className="glass-input px-3 py-2 rounded text-white text-sm"
+                          />
+                          <input
+                            type="text"
+                            value={task.artist}
+                            onChange={(e) => updateTaskField(task.id, 'artist', e.target.value)}
+                            placeholder="Artist"
+                            className="glass-input px-3 py-2 rounded text-white text-sm"
+                          />
+                          <select
+                            value={task.category}
+                            onChange={(e) => updateTaskField(task.id, 'category', e.target.value)}
+                            className="glass-input px-3 py-2 rounded text-white text-sm"
+                          >
+                            <option value="Romantic">Romantic</option>
+                            <option value="Jazz">Jazz</option>
+                            <option value="Classical">Classical</option>
+                            <option value="Pop">Pop</option>
+                            <option value="Acoustic">Acoustic</option>
+                            <option value="Rock">Rock</option>
+                            <option value="Electronic">Electronic</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                      )}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Category *
-                </label>
-                <select
-                  value={uploadCategory}
-                  onChange={(e) => setUploadCategory(e.target.value)}
-                  className="glass-input w-full px-4 py-3 rounded-lg text-white"
-                >
-                  <option value="Romantic">Romantic</option>
-                  <option value="Jazz">Jazz</option>
-                  <option value="Classical">Classical</option>
-                  <option value="Pop">Pop</option>
-                  <option value="Acoustic">Acoustic</option>
-                  <option value="Rock">Rock</option>
-                  <option value="Electronic">Electronic</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
+                      {(task.status === 'uploading' || task.status === 'success') && (
+                        <div className="mt-2">
+                          <div className="w-full bg-gray-700 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${task.status === 'success' ? 'bg-green-500' : 'bg-blue-500'}`}
+                              style={{ width: `${task.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
-              {uploading && (
-                <div className="glass-input p-4 rounded-lg">
-                  <p className="text-white text-sm mb-2">Uploading...</p>
-                  <div className="w-full bg-gray-700 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full transition-all"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
+                    {task.status === 'pending' && (
+                      <button
+                        onClick={() => removeTask(task.id)}
+                        className="ml-3 text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
                   </div>
                 </div>
-              )}
+              ))}
+            </div>
 
-              <div className="flex space-x-3 pt-4">
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between">
+              <button
+                onClick={clearCompletedTasks}
+                className="glass-input px-4 py-2 rounded-lg text-gray-300 hover:text-white transition-colors text-sm"
+              >
+                Clear Completed
+              </button>
+              <div className="flex space-x-3">
                 <button
                   onClick={() => {
+                    setUploadTasks([]);
                     setShowUploadModal(false);
-                    resetUploadForm();
                   }}
-                  disabled={uploading}
-                  className="flex-1 glass-input px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50"
+                  className="glass-input px-6 py-3 rounded-lg text-white font-semibold"
                 >
-                  Cancel
+                  Cancel All
                 </button>
                 <button
-                  onClick={handleUpload}
-                  disabled={uploading || !uploadTitle || !uploadArtist || !uploadCategory}
-                  className="flex-1 glass-button px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50"
+                  onClick={handleUploadAll}
+                  disabled={uploadTasks.filter(t => t.status === 'pending').length === 0}
+                  className="glass-button px-6 py-3 rounded-lg text-white font-semibold disabled:opacity-50"
                 >
-                  {uploading ? 'Uploading...' : 'Upload'}
+                  Upload All ({uploadTasks.filter(t => t.status === 'pending').length})
                 </button>
               </div>
             </div>

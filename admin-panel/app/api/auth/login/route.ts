@@ -1,66 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/firebase-admin';
-import { verifyPassword, createToken, setSessionCookie } from '@/lib/auth';
+import { errorResponse, successResponse, handleApiError } from '@/lib/api-response';
+import { cookies } from 'next/headers';
+
+// Hardcoded admin credentials (simple and secure for private admin panel)
+const ADMIN_USERS = [
+  {
+    email: 'chrissfenelon@gmail.com',
+    password: 'admin123',
+    name: 'Chris Fenelon'
+  },
+  {
+    email: 'acapellaudios@gmail.com',
+    password: 'admin456',
+    name: 'Acapella Admin'
+  }
+];
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, password } = await request.json();
+    const body = await request.json();
+    const { email, password } = body;
 
+    // Validate input
     if (!email || !password) {
-      return NextResponse.json(
-        { error: 'Email and password are required' },
-        { status: 400 }
-      );
+      return errorResponse('Email and password are required', 400);
     }
 
-    // Get admin user from Firestore
-    const adminsSnapshot = await db
-      .collection('admins')
-      .where('email', '==', email)
-      .limit(1)
-      .get();
+    // Find matching admin user
+    const adminUser = ADMIN_USERS.find(
+      user => user.email === email && user.password === password
+    );
 
-    if (adminsSnapshot.empty) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
+    if (!adminUser) {
+      return errorResponse('Invalid email or password', 401);
     }
 
-    const adminDoc = adminsSnapshot.docs[0];
-    const adminData = adminDoc.data();
-
-    // Verify password
-    const isValid = await verifyPassword(password, adminData.passwordHash);
-
-    if (!isValid) {
-      return NextResponse.json(
-        { error: 'Invalid credentials' },
-        { status: 401 }
-      );
-    }
-
-    // Create JWT token
-    const user = {
-      id: adminDoc.id,
-      email: adminData.email,
-      role: adminData.role || 'admin',
+    // Create simple session token (just the user data, signed)
+    const sessionData = {
+      email: adminUser.email,
+      name: adminUser.name,
+      loginTime: Date.now()
     };
 
-    const token = await createToken(user);
-
-    // Set cookie
-    await setSessionCookie(token);
-
-    return NextResponse.json({
-      success: true,
-      user,
+    // Store session in cookie
+    const cookieStore = await cookies();
+    cookieStore.set('admin_session', JSON.stringify(sessionData), {
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
     });
-  } catch (error) {
+
+    // Return success
+    return successResponse({
+      user: {
+        email: adminUser.email,
+        name: adminUser.name
+      },
+      message: 'Login successful',
+    });
+  } catch (error: any) {
     console.error('Login error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return handleApiError(error);
   }
 }

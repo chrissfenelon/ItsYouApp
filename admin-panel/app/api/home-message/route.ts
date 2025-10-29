@@ -1,52 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { requireAuth } from '@/lib/auth';
 import { getHomeMessage, updateHomeMessage } from '@/lib/db';
+import { successResponse, errorResponse, handleApiError } from '@/lib/api-response';
 
 export async function GET() {
   try {
+    await requireAuth();
     const message = await getHomeMessage();
-
-    return NextResponse.json({
-      success: true,
-      message,
-    });
-  } catch (error: any) {
-    console.error('Error getting home message:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return successResponse({ message });
+  } catch (error) {
+    return handleApiError(error);
   }
 }
 
-export async function PUT(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
-    const { message } = await request.json();
+    await requireAuth();
+
+    const body = await request.json();
+    const { message } = body;
 
     if (!message) {
-      return NextResponse.json(
-        { error: 'Message is required' },
-        { status: 400 }
-      );
+      return errorResponse('Message is required', 400);
     }
 
     const success = await updateHomeMessage(message);
 
-    if (success) {
-      return NextResponse.json({
-        success: true,
-        message: 'Home message updated successfully',
-      });
-    } else {
-      return NextResponse.json(
-        { error: 'Failed to update message' },
-        { status: 500 }
-      );
+    if (!success) {
+      return errorResponse('Failed to update home message', 500);
     }
-  } catch (error: any) {
-    console.error('Error updating home message:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+
+    return successResponse({ message: 'Home message updated successfully' });
+  } catch (error) {
+    return handleApiError(error);
   }
 }
